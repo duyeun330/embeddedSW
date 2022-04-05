@@ -80,6 +80,7 @@ void reader(int semid, struct databuf *buf1, struct databuf *buf2)
 		if (buf1->d_nread <= 0)
 			return ;
 		buf2->d_nread = read(0, buf2->d_buf, SIZE);
+		printf("bye\n");
 		semop(semid, &v1, 1);
 		semop(semid, &p2, 1);
 		if (buf2->d_nread <= 0)
@@ -98,6 +99,7 @@ void writer(int semid, struct databuf *buf1, struct databuf *buf2)
 		if (buf1->d_nread <= 0)
 			return ;
 		write(1, buf1->d_buf, buf1->d_nread);
+		printf("hello\n");
 		semop(semid, &p1, 1);
 		semop(semid, &v2, 1);
 		if (buf2->d_nread <= 0)
@@ -119,12 +121,12 @@ int main(){
 			break ;
 
 		case 0:
-			writer(sem_id, buf1, buf2);
-			remobj();
+			reader(sem_id, buf1, buf2);
 			break ;
 
 		default:
-			reader(sem_id, buf1, buf2);
+			writer(sem_id, buf1, buf2);
+			remobj();
 			break ;
 	}
 }
