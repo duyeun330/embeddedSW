@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -21,6 +22,16 @@
 #include <termios.h>
 #include <signal.h>
 #include <string.h>
+
+// DEVICE ADDRESS
+#define READKEY_ADDRESS "/dev/input/event0"
+#define FND_ADDRESS "/dev/fpga_fnd"
+#define SWITCH_ADDRESS "/dev/fpga_push_switch"
+#define DOT_ADDRESS "/dev/fpga_dot"
+#define LCD_ADDRESS "/dev/fpga_text_lcd"
+#define LED_ADDRESS "/dev/mem"
+#define FPGA_BASE_ADDRESS 0x08000000
+#define LED_ADDR 0x16
 
 // MODE
 #define CLOCK 1
@@ -62,4 +73,10 @@ int	is_edit;
 struct tm	*loc_time;
 time_t	t;
 unsigned char	sw_buf[10];
+
+// Function
+void set_semaphore();
+void set_shared_memory();
+void	initialize();
+
 #endif
