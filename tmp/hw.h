@@ -80,8 +80,8 @@ typedef union{
 int shm_id1, shm_id2, semid;
 
 // SEMAPHORE CONTROL
-struct sembuf p1 = {0, -1, SEM_UNDO }, p2 = {1, -1, SEM_UNDO};
-struct sembuf v1 = {0, 1, SEM_UNDO }, v2 = {1, 1, SEM_UNDO};
+struct sembuf p1 = {0, -1, SEM_UNDO }, p2 = {1, -1, SEM_UNDO}, p3 = {2, -1, SEM_UNDO};
+struct sembuf v1 = {0, 1, SEM_UNDO }, v2 = {1, 1, SEM_UNDO}, v3 = {2, 1, SEM_UNDO};
 
 // DEVICE DRIVER FD
 int	fd[10];
@@ -106,6 +106,11 @@ char alphabet[4][9] = {
 	{'Q', 'B', 'E', 'H', 'K', 'N', 'R', 'U', 'X'},
 	{'Z', 'C', 'F', 'G', 'L', 'O', 'S', 'V', 'Y'}
 };
+
+// FOR MODE 4
+int	sw_mode4 = 1;
+int	count4 = 0;
+int	dx, dy;
 
 int	mode = 1;
 int	md[2];

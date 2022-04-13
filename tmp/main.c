@@ -5,11 +5,13 @@ int set_semaphore() {
 	int		id = -1;
 	
 	x.val = 1;
-	if ((id = semget(SEM_KEY, 2, 0600|IPC_CREAT)) == -1)
+	if ((id = semget(SEM_KEY, 3, 0600|IPC_CREAT)) == -1)
 		exit(-1);
 	if (semctl(id, 0, SETVAL, x) == -1)
 		exit(-1);
 	if (semctl(id, 1, SETVAL, x) == -1)
+		exit(-1);
+	if (semctl(id, 2, SETVAL, x) == -1)
 		exit(-1);
 	return (id);
 }
@@ -62,7 +64,9 @@ void open_device(){
 }
 
 void	close_device(){
+	int	i;
 
+	//for (
 }
 
 void	get_current_time(unsigned char *t_buf){
@@ -90,14 +94,12 @@ void	update_output_time(unsigned char *t_buf){
 void	initialize(){
 
 	open_device();
-	semop(semid, &p2, 1);
 	output_buffer->init = 1;
 	output_buffer->mode = 1;
 	memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
 	get_current_time(time_buf);
 	update_output_time(time_buf);
 	output_buffer->led_data = 128;
-	semop(semid, &v2, 1);
 }
 
 void	input_process(){
@@ -109,7 +111,7 @@ void	input_process(){
 
 	rk_buf_size = sizeof(struct input_event);
 	while (1) {
-		usleep(400000);
+		usleep(350000);
 		semop(semid, &p1, 1);
 		if ((get_rk = read(fd[0], tmp_ev, rk_buf_size * 64)) >= rk_buf_size) {
 			memcpy(input_buffer->readkey, tmp_ev, rk_buf_size * 64);
@@ -355,8 +357,61 @@ void	mode3_calculate(){
 	memcpy(output_buffer->dot_buf, dot_buf, sizeof(output_buffer->dot_buf));
 }
 
-void	mode4_calculate(){
+void	get_dot_matrix(int num){
+	unsigned char	tmp = 0;
+	int	i;
 
+	if (num == 0) {
+		memcpy(dot_buf, fpga_set_blank, sizeof(dot_buf));
+		sw_mode4 = 1;
+		dx = dy = 0;
+	}
+	else if (num == 2) {
+		if (sw_mode4)
+			sw_mode4 = 0;
+		else
+			sw_mode4 = 1;
+	}
+	else if (num == 4) {
+		dot_buf[dy] ^= (1 << (6 - dx));
+	}
+	else if (num == 6) {
+		memcpy(dot_buf, fpga_set_blank, sizeof(dot_buf));
+	}
+	else if (num == 8) {
+		tmp = (1 << 7) - 1;
+		for (i = 0; i < 10; i++)
+			dot_buf[i] ^= tmp;
+	}
+	else {
+		if (num == 1)
+			dy = (dy + 9) % 10;
+		else if (num == 3)
+			dx = (dx + 6) % 7;
+		else if (num == 5)
+			dx = (dx + 8) % 7;
+		else
+			dy = (dy + 11) % 10;
+	}
+}
+
+void	mode4_calculate(){
+	int	i;
+	int	tmp;
+
+	for (i = 0 ; i < 9; i++) {
+		if (sw_buf[i] == 1) {
+			get_dot_matrix(i);
+			break ;
+		}
+	}
+	count4++;
+	tmp = count4;
+	for (i = 3; i >= 0; i--) {
+		output_buffer->fnd_buf[i] = tmp % 10;
+		tmp /= 10;
+	}
+	memcpy(output_buffer->dot_buf, dot_buf, sizeof(output_buffer->dot_buf));
 }
 
 
@@ -398,7 +453,20 @@ void	mode3_init(){
 }
 
 
-void	mode4_init(){}
+void	mode4_init(){
+	int	i;
+
+	get_current_time(time_buf1);
+	dx = dy = 0;
+	output_buffer->init = 1;
+     output_buffer->mode = 4;
+     memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
+	for (i = 0; i < 4; i++)
+		output_buffer->fnd_buf[i] = 0;
+	memcpy(dot_buf, fpga_set_blank, sizeof(output_buffer->dot_buf));
+	memcpy(output_buffer->dot_buf, dot_buf, sizeof(output_buffer->dot_buf));
+	output_buffer->led_data = 0;
+}
 
 void	main_init(){
 	if (readkey[0].value == KEY_RELEASE)
@@ -417,7 +485,6 @@ void	main_init(){
 	else if (readkey[0].code == KEY_BACK) {
 	
 	}
-	printf("main_init     %d\n", mode);
 	switch (mode) {
 		case CLOCK :
 			mode1_init();
@@ -467,48 +534,48 @@ void	main_calculate(int mode_check){
 
 void	main_process(){
 	int	mode_check;
-	int	sec;
 	time_t	tmp_t;
 	struct tm	tmp_loctime;
 
 	while (1) {
 		// input buffer
-		usleep(400000);
+		usleep(350000);
 		semop(semid, &p1, 1);
 		mode_check = main_check_mode();
 		printf("main  main%d\n", mode_check);
 		semop(semid, &v1, 1);
 
 		// calculate
-if (mode_check == 2) {
-
-			// output buffer
-	
-			semop(semid, &p2, 1);
+		semop(semid, &p2, 1);
+		if (mode_check == 2) {
 			main_calculate(mode_check);
-			semop(semid, &v2, 1);
 		}
 		else if (mode_check == 1) {
-			semop(semid, &p2, 1);
 			main_init();
-			semop(semid, &v2, 1);
 		}
 		else if (mode == 1 && sw_mode == 1) {
 			tmp_t = time(NULL);
 			localtime_r(&tmp_t, &tmp_loctime);
 			if (sw_second != tmp_loctime.tm_sec) {
-				get_current_time(time_buf1);
-				semop(semid, &p2, 1);
+				get_current_time(time_buf1);	
 				if (led_data == 32) {
 					output_buffer->led_data = led_data = 16;
 				}
 				else {
 					output_buffer->led_data = led_data = 32;
 				}
-				semop(semid, &v2, 1);
 			}
 		}
-
+		else if (mode == 4 && sw_mode4 == 1) {
+			tmp_t = time(NULL);
+			localtime_r(&tmp_t, &tmp_loctime);
+			if (sw_second != tmp_loctime.tm_sec){
+				get_current_time(time_buf1);
+				output_buffer->dot_buf[dy] ^= (1 << (6 - dx));
+				printf("mode4  mode4  %x\n", output_buffer->dot_buf[dy]);
+			}
+		}
+		semop(semid, &v2, 1);
 	}
 }
 
@@ -601,7 +668,36 @@ void	output_mode3(int is_init){
 		exit(-1);
 	}
 }
-void	output_mode4(int is_init){}
+void	output_mode4(int is_init){
+	int checkerr;
+	unsigned long	*fpga_addr;
+	unsigned char	*led_addr;
+
+	if (is_init){
+		fpga_addr = (unsigned long *)mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd[5], FPGA_BASE_ADDRESS);
+		if (fpga_addr == MAP_FAILED) {
+			printf("%s mmap error\n", LED_ADDRESS);
+			exit(-1);
+		}
+		led_addr = (unsigned char*)((void *)fpga_addr+LED_ADDR);
+		*led_addr = output_buffer->led_data;
+		munmap(led_addr, 4096);
+		output_buffer->init = 0;
+	}
+	if ((checkerr = write(fd[1], &output_buffer->fnd_buf, 4)) < 0) {
+		printf("%s output write error.\n", FND_ADDRESS);
+		exit(-1);
+	}
+	printf("output  output   \n");
+	if ((checkerr = write(fd[3], &output_buffer->dot_buf, sizeof(output_buffer->dot_buf))) < 0) {
+		printf("%s output write error.\n", DOT_ADDRESS);
+		exit(-1);
+	}
+	if ((checkerr = write(fd[4], &output_buffer->lcd_buf, 32)) < 0) {
+		printf("%s output write error.\n", LCD_ADDRESS);
+		exit(-1);
+	}
+}
 void	output_handler(){
 	int	is_init;
 
@@ -620,7 +716,7 @@ void	output_handler(){
 			break ;
 
 		case DRAW_BOARD :
-			output_mode3(is_init);
+			output_mode4(is_init);
 			break;
 
 		default :
@@ -631,7 +727,7 @@ void	output_handler(){
 
 void	output_process(){
 	while (1){
-		usleep(400000);
+		usleep(350000);
 		semop(semid, &p2, 1);
 		output_handler(output_buffer->init);
 		semop(semid, &v2, 1);
@@ -660,7 +756,7 @@ int main(){
 			output_process();
 		}
 		else {
-			if ((pid3 == fork()) == -1) {
+			if ((pid3 = fork()) == -1) {
 				printf("fork failed\n");
 				exit(-1);
 			}
