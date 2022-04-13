@@ -41,7 +41,8 @@
 #define KEY_VOLUME_UP 115
 #define KEY_VOLUME_DOWN 114
 #define KEY_BACK 158
-
+#define KEY_RELEASE 0
+#define KEY_PRESS 1
 #define READKEY_PRESSED 1
 #define SWITCH_PRESSED 2
 #define NOTHING_PRESSED 0
@@ -60,7 +61,7 @@ struct databuf1{
 	int	switch_num;
 	int	md[2];
 	unsigned char	led_data;
-	unsigned char	sw_buf[10];
+	unsigned char	sw_buf[9];
 	unsigned char	fnd_buf[4];
 	unsigned char	lcd_buf[32];
 	unsigned char	dot_buf[10];
@@ -87,10 +88,15 @@ int	fd[10];
 
 // For Mode 1
 int	sw_mode = 0;
+
+// FOR MODE 2
+int	n_decimal = 0;
+int	sw_mode2 = 1;
+
 int	mode = 1;
 int	md[2];
 int	sw_second;
-unsigned char	sw_buf[10];
+unsigned char	sw_buf[9];
 unsigned char	time_buf[4], time_buf1[4];
 unsigned char  led_data;
 unsigned char  lcd_buf[32];

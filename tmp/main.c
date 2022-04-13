@@ -114,13 +114,10 @@ void	input_process(){
 		if ((get_rk = read(fd[0], tmp_ev, rk_buf_size * 64)) >= rk_buf_size) {
 			memcpy(input_buffer->readkey, tmp_ev, rk_buf_size * 64);
 			input_buffer->md[0] = 1;
+			printf("hello hello %d %d\n", md[0], md[1]);
 		}
 		else {
 			read(fd[2], &tmp_sw, sizeof(tmp_sw));
-			printf("hello hello %d %d\n", md[0], md[1]);
-			for (i = 0; i < 9; i++)
-				printf("[%d] ", tmp_sw[i]);
-			printf("\n");
 			for (i = 0; i < 9; i++) {
 				if (tmp_sw[i] == 1) {
 					memcpy(input_buffer->sw_buf, tmp_sw, sizeof(tmp_sw));
@@ -158,14 +155,11 @@ int	main_check_mode(){
 			break ;
 
 		case SWITCH_PRESSED :
-			//mode = (mode + 2) % 4 + 1;
-			//	main_init = 1;
 			memcpy(sw_buf, input_buffer->sw_buf, sizeof(sw_buf));
 			break ;
 
 		case NOTHING_PRESSED :
 			//mode = (mode + 5) % 4;
-			//main_init = 1;
 			break ;
 
 		default :
@@ -227,8 +221,64 @@ void	mode1_calculate(){
 
 }
 
-void	mode2_calculate(){
+int	ret_dec(int wh) {
+	if (wh == 1)
+		return (10);
+	else if (wh == 2)
+		return (8);
+	else if (wh == 3)
+		return (4);
+	else 
+		return (2);
+}
 
+void	add_to_decimal(int m, int wh) {
+	int	num = ret_dec(wh);
+	switch (m) {
+		case 1 :
+			n_decimal += num * num;
+			break ;
+		case 2 :
+			n_decimal += num;
+			break ;
+		case 3 :
+			n_decimal += 1;
+			break ;
+		default :
+			break ;
+	}
+}
+
+void	mode2_calculate(){
+	int	i;
+	int	tmp;
+	int	dec;
+	for (i = 1; i <= 3; i++){
+		if (sw_buf[i] == 1){
+			add_to_decimal(i, sw_mode2);
+			break ;
+		}
+	}
+	if (sw_buf[0] == 1) {
+		sw_mode2 += 1;
+		if (sw_mode2 == 5)
+			sw_mode2 = 1;
+		if (sw_mode2 ==1)
+			output_buffer->led_data = 64;
+		else if (sw_mode2 == 2)
+			output_buffer->led_data = 32;
+		else if (sw_mode2 == 3)
+			output_buffer->led_data = 16;
+		else
+			output_buffer->led_data = 128;
+		printf("decimal decimal   %d\n", sw_mode2);
+	}
+	dec = ret_dec(sw_mode2);
+	tmp = n_decimal;
+	for (i = 3; i >= 1; i--) {
+		output_buffer->fnd_buf[i] = tmp % dec;
+		tmp /= dec;
+	}
 }
 
 void	mode3_calculate(){
@@ -240,10 +290,25 @@ void	mode4_calculate(){
 }
 
 
-void	mode1_init(){}
+void	mode1_init(){
+	output_buffer->init = 1;
+	output_buffer->mode = 1;
+	memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
+	update_output_time(time_buf);
+	output_buffer->led_data = 128;
+}
 
 
-void	mode2_init(){}
+void	mode2_init(){
+	int	i;
+
+	output_buffer->init = 1;
+     output_buffer->mode = 2;
+     memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
+	for (i = 0; i < 4; i++)
+		output_buffer->fnd_buf[i] = 0;
+	output_buffer->led_data = 64;
+}
 
 
 void	mode3_init(){}
@@ -252,6 +317,23 @@ void	mode3_init(){}
 void	mode4_init(){}
 
 void	main_init(){
+	if (readkey[0].value == KEY_RELEASE)
+		return ;
+	if (readkey[0].code == KEY_VOLUME_UP) 
+	{
+		mode = mode + 1;
+		if (mode == 5)
+			mode = 1;
+	}
+	else if (readkey[0].code == KEY_VOLUME_DOWN) {
+		mode = mode - 1;
+		if (mode == 0)
+			mode = 4;
+	}
+	else if (readkey[0].code == KEY_BACK) {
+	
+	}
+	printf("main_init     %d\n", mode);
 	switch (mode) {
 		case CLOCK :
 			mode1_init();
@@ -376,7 +458,36 @@ void	output_mode1(int is_init){
 	munmap(led_addr, 4096);
 }
 
-void	output_mode2(int is_init){}
+void	output_mode2(int is_init){
+	int checkerr;
+	unsigned long	*fpga_addr;
+	unsigned char	*led_addr;
+
+	if (is_init){
+		if ((checkerr = write(fd[3], &fpga_set_blank, sizeof(fpga_set_blank))) < 0) {
+			printf("%s output write error.\n", DOT_ADDRESS);
+			exit(-1);
+		}
+		if ((checkerr = write(fd[4], &output_buffer->lcd_buf, 32)) < 0) {
+			printf("%s output write error.\n", LCD_ADDRESS);
+			exit(-1);
+		}
+		output_buffer->init = 0;
+	}
+	if ((checkerr = write(fd[1], &output_buffer->fnd_buf, 4)) < 0) {
+		printf("%s output write error.\n", FND_ADDRESS);
+		exit(-1);
+	}
+	fpga_addr = (unsigned long *)mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd[5], FPGA_BASE_ADDRESS);
+	if (fpga_addr == MAP_FAILED) {
+		printf("%s mmap error\n", LED_ADDRESS);
+		exit(-1);
+	}
+	led_addr = (unsigned char*)((void *)fpga_addr+LED_ADDR);
+	*led_addr = output_buffer->led_data;
+	munmap(led_addr, 4096);
+}
+
 void	output_mode3(int is_init){}
 void	output_mode4(int is_init){}
 void	output_handler(){
