@@ -22,7 +22,6 @@
 #include <termios.h>
 #include <signal.h>
 #include <string.h>
-
 // DEVICE ADDRESS
 #define READKEY_ADDRESS "/dev/input/event0"
 #define FND_ADDRESS "/dev/fpga_fnd"
@@ -35,15 +34,18 @@
 
 // MODE
 #define CLOCK 1
-#define Counter 2
+#define COUNTER 2
 #define TEXT_EDITER 3
 #define DRAW_BOARD 4
 
+#define KEY_VOLUME_UP 115
+#define KEY_VOLUME_DOWN 114
+#define KEY_BACK 158
 // SHARED MEMORY & SEMAPHORE KEY-GEN
 #define SHARED_KEY1 (key_t) 0x10
 #define SHARED_KEY2 (key_t) 0x20
 #define SEM_KEY (key_t) 0x30
-#define ERR ((struct databuf *)-1)
+#define ERR ((void *) -1)
 
 // STRUCT SHARED MEMORY
 struct databuf1{
@@ -52,31 +54,44 @@ struct databuf1{
 	int	mode;
 	int	switch_num;
 	char	d_buf[1001];
+	unsigned char	led_data;
 	unsigned char	sw_buf[10];
 	unsigned char	fnd_buf[4];
+	unsigned char	lcd_buf[32];
+	unsigned char	dot_buf[10];
+	struct input_event readkey[64];
 };
 
 struct databuf1 *input_buffer, *output_buffer;
 
+typedef union{
+	int	val;
+	struct semid_ds *buf;
+	ushort *array;
+}semun;
+
 // SHARED MEMORY ID & SEMAPHORE ID
-int shm_id1, shm_id2, sem_id;
+int shm_id1, shm_id2, semid;
 
 // SEMAPHORE CONTROL
 struct sembuf p1 = {0, -1, SEM_UNDO }, p2 = {1, -1, SEM_UNDO};
 struct sembuf v1 = {0, 1, SEM_UNDO }, v2 = {1, 1, SEM_UNDO};
 
 // DEVICE DRIVER FD
-int	dev_fd[10];
+int	fd[10];
 
 // For Mode 1
 int	is_edit;
+int	mode = 1;
+int	main_init = 1;
 struct tm	*loc_time;
 time_t	t;
 unsigned char	sw_buf[10];
-
+unsigned char	time_buf[4];
+unsigned char  led_data;
+unsigned char  lcd_buf[32];
+unsigned char	dot_buf[10];
+struct input_event readkey[64];
 // Function
-void set_semaphore();
-void set_shared_memory();
-void	initialize();
 
 #endif

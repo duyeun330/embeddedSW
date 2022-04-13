@@ -1,11 +1,10 @@
 #include "hw.h"
-
+#include "fpga_dot_font.h"
 int set_semaphore() {
-	union semun	x;
-	int			id;
-
+	semun	x;
+	int		id = -1;
+	
 	x.val = 1;
-	id = -1;
 	if ((id = semget(SEM_KEY, 2, 0600|IPC_CREAT)) == -1)
 		exit(-1);
 	if (semctl(id, 0, SETVAL, x) == -1)
@@ -24,11 +23,11 @@ void set_shared_memory() {
 		perror("error shmget\n");
 		exit(-1);
  	}
-  	if ((input_buffer = (struct databuf1 *)shmat(shm_id1, 0, 0)) == ERR){
+  	if ((input_buffer = (struct databuf1 *)shmat(shm_id1, 0, 0)) == (void *)-1){
 		perror("error shmget\n");
 		exit(-1);
 	}
-	if ((output_buffer = (struct databuf1 *)shmat(shm_id2, 0, 0)) == ERR){
+	if ((output_buffer = (struct databuf1 *)shmat(shm_id2, 0, 0)) == (void *)-1){
           perror("error shmget\n");
  		exit(-1);
 	}
@@ -36,27 +35,27 @@ void set_shared_memory() {
 
 void open_device(){
 	// open readkey
-	if ((dev_fd[0] = open(READKEY_ADDRESS, O_RDONLY | O_NONBLOCK)) == -1) {
+	if ((fd[0] = open(READKEY_ADDRESS, O_RDONLY | O_NONBLOCK)) == -1) {
 		printf("%s open error\n", READKEY_ADDRESS);
 		exit(-1);
 	}
-	if ((dev_fd[1] = open(FND_ADDRESS, O_RDWR)) == -1) {
+	if ((fd[1] = open(FND_ADDRESS, O_RDWR)) == -1) {
 		printf("%s open error\n", FND_ADDRESS);
 		exit(-1);
 	}
-	if ((dev_fd[2] = open(SWITCH_ADDRESS, O_RDWR)) == -1) {
+	if ((fd[2] = open(SWITCH_ADDRESS, O_RDWR)) == -1) {
 		printf("%s open error\n", SWITCH_ADDRESS);
 		exit(-1);
 	}
-	if ((dev_fd[3] = open(DOT_ADDRESS, O_WRONLY)) == -1) {
+	if ((fd[3] = open(DOT_ADDRESS, O_WRONLY)) == -1) {
 		printf("%s open error\n", DOT_ADDRESS);
 		exit(-1);
 	}
-	if ((dev_fd[4] = open(LCD_ADDRESS, O_WRONLY)) == -1) {
+	if ((fd[4] = open(LCD_ADDRESS, O_WRONLY)) == -1) {
 		printf("%s open error\n", LCD_ADDRESS);
 		exit(-1);
 	}
-	if ((dev_fd[5] = open(LED_ADDRESS, O_RDWR | O_SYNC)) == -1) {
+	if ((fd[5] = open(LED_ADDRESS, O_RDWR | O_SYNC)) == -1) {
 		printf("%s open error\n", LED_ADDRESS);
 		exit(-1);
 	}
@@ -98,7 +97,6 @@ void	initialize(){
 }
 
 void	input_process(){
-	int	retval;
 	int	rk_buf_size;;
 	while (1) {
 		usleep(400000);
@@ -215,7 +213,7 @@ void	main_process(){
 void	output_mode1(int is_init){
 	int checkerr;
 	unsigned long	*fpga_addr;
-	unsigned long	*led_addr;
+	unsigned char	*led_addr;
 
 	if (is_init){
 		if ((checkerr = write(fd[3], &fpga_set_blank, sizeof(fpga_set_blank))) < 0) {
@@ -233,7 +231,7 @@ void	output_mode1(int is_init){
 		exit(-1);
 	}
 	fpga_addr = (unsigned long *)mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd[5], FPGA_BASE_ADDRESS);
-	if (fpga_acddr == MAP_FAILED) {
+	if (fpga_addr == MAP_FAILED) {
 		printf("%s mmap error\n", LED_ADDRESS);
 		exit(-1);
 	}
@@ -242,6 +240,9 @@ void	output_mode1(int is_init){
 	munmap(led_addr, 4096);
 }
 
+void	output_mode2(int is_init){}
+void	output_mode3(int is_init){}
+void	output_mode4(int is_init){}
 void	output_handler(){
 	int	is_init;
 
@@ -279,7 +280,7 @@ void	output_process(){
 int main(){
 	pid_t pid1, pid2, pid3;
 
-	set_semaphore();
+	semid = set_semaphore();
 	set_shared_memory();
 	if ((pid1 = fork()) == -1) {
 		printf("fork failed\n");
