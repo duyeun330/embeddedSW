@@ -281,8 +281,78 @@ void	mode2_calculate(){
 	}
 }
 
-void	mode3_calculate(){
+int	get_corret_alpha(int num) {
+	if (num == 1 && sw_buf[2] == 1) {
+		memset(lcd_buf, 0, sizeof(lcd_buf));
+		dup_num = dup_char = idx = 0;
+		is_first = 1;
+		count += 2;
+		return (1);
+	}
+	else if (num == 4 && sw_buf[5] == 1) {
+		if (is_number) {
+			is_number = 0;
+			memcpy(dot_buf, fpga_set_A, sizeof(dot_buf));
+		}
+		else {
+			is_number = 1;
+			memcpy(dot_buf, fpga_number[1], sizeof(dot_buf));
+		}
+		dup_num = dup_char = 0;
+		count += 2;
+		return (1);
+	}
+	else if (num == 7 && sw_buf[8] == 1) {
+		idx++;
+		count += 2;
+		return (1);
+	}
+	else {
+		if (is_number == 0){
+			if (num == dup_char) {
+				dup_num += 1;
+				if (dup_num == 4)
+					dup_num = 1;
+			}
+			else {
+				dup_num = 1;
+				dup_char = num;
+				if (!is_first){
+					idx++;
+					idx %= 32;
+				}
+				is_first = 0;
+			}
+			lcd_buf[idx] = alphabet[dup_num][num];
+		}
+		else {
+			idx = (idx + 1) % 32;
+			lcd_buf[idx] = '0' + num + 1;
+		}
+		count++;
+	}
+	return (0);
+}
 
+void	mode3_calculate(){
+	int	i;
+	int	flag = 0;
+	int	tmp;
+
+	for (i = 0; i < 9; i++) {
+		if (sw_buf[i] == 1) {
+			flag = get_corret_alpha(i);
+		}
+		if (flag)
+			break ;
+	}
+	memcpy(output_buffer->lcd_buf, lcd_buf, sizeof(output_buffer->lcd_buf));
+	tmp = count;
+	for (i = 3; i >= 0; i--) {
+		output_buffer->fnd_buf[i] = tmp % 10;
+		tmp /= 10;
+	}
+	memcpy(output_buffer->dot_buf, dot_buf, sizeof(output_buffer->dot_buf));
 }
 
 void	mode4_calculate(){
@@ -299,9 +369,10 @@ void	mode1_init(){
 }
 
 
-void	mode2_init(){
+void	mode2_init(){	
 	int	i;
 
+	sw_mode2 = 1;
 	output_buffer->init = 1;
      output_buffer->mode = 2;
      memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
@@ -311,7 +382,20 @@ void	mode2_init(){
 }
 
 
-void	mode3_init(){}
+void	mode3_init(){	
+	int	i;
+
+	dup_num = dup_char = idx = is_number = 0;
+	is_first = 1;
+	output_buffer->init = 1;
+     output_buffer->mode = 3;
+     memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
+	for (i = 0; i < 4; i++)
+		output_buffer->fnd_buf[i] = 0;
+	memcpy(dot_buf, fpga_set_A, sizeof(output_buffer->dot_buf));
+	memcpy(output_buffer->dot_buf, dot_buf, sizeof(output_buffer->dot_buf));
+	output_buffer->led_data = 0;
+}
 
 
 void	mode4_init(){}
@@ -396,7 +480,7 @@ void	main_process(){
 		semop(semid, &v1, 1);
 
 		// calculate
-		if (mode_check == 2) {
+if (mode_check == 2) {
 
 			// output buffer
 	
@@ -488,7 +572,35 @@ void	output_mode2(int is_init){
 	munmap(led_addr, 4096);
 }
 
-void	output_mode3(int is_init){}
+void	output_mode3(int is_init){
+	int checkerr;
+	unsigned long	*fpga_addr;
+	unsigned char	*led_addr;
+
+	if (is_init){
+		fpga_addr = (unsigned long *)mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd[5], FPGA_BASE_ADDRESS);
+		if (fpga_addr == MAP_FAILED) {
+			printf("%s mmap error\n", LED_ADDRESS);
+			exit(-1);
+		}
+		led_addr = (unsigned char*)((void *)fpga_addr+LED_ADDR);
+		*led_addr = output_buffer->led_data;
+		munmap(led_addr, 4096);
+		output_buffer->init = 0;
+	}
+	if ((checkerr = write(fd[1], &output_buffer->fnd_buf, 4)) < 0) {
+		printf("%s output write error.\n", FND_ADDRESS);
+		exit(-1);
+	}
+	if ((checkerr = write(fd[3], &output_buffer->dot_buf, sizeof(output_buffer->dot_buf))) < 0) {
+		printf("%s output write error.\n", DOT_ADDRESS);
+		exit(-1);
+	}
+	if ((checkerr = write(fd[4], &output_buffer->lcd_buf, 32)) < 0) {
+		printf("%s output write error.\n", LCD_ADDRESS);
+		exit(-1);
+	}
+}
 void	output_mode4(int is_init){}
 void	output_handler(){
 	int	is_init;

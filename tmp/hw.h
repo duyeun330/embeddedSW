@@ -93,6 +93,20 @@ int	sw_mode = 0;
 int	n_decimal = 0;
 int	sw_mode2 = 1;
 
+// FOR MODE 3
+int	count = 0;
+int	dup_num = 0;
+int	dup_char = 0;
+int	idx = 0;
+int	is_number = 0;
+int	is_first = 1;
+char alphabet[4][9] = {
+	{0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{'.', 'A', 'D', 'G', 'J', 'M', 'P', 'T', 'W'},
+	{'Q', 'B', 'E', 'H', 'K', 'N', 'R', 'U', 'X'},
+	{'Z', 'C', 'F', 'G', 'L', 'O', 'S', 'V', 'Y'}
+};
+
 int	mode = 1;
 int	md[2];
 int	sw_second;
