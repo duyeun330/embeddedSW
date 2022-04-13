@@ -41,6 +41,11 @@
 #define KEY_VOLUME_UP 115
 #define KEY_VOLUME_DOWN 114
 #define KEY_BACK 158
+
+#define READKEY_PRESSED 1
+#define SWITCH_PRESSED 2
+#define NOTHING_PRESSED 0
+
 // SHARED MEMORY & SEMAPHORE KEY-GEN
 #define SHARED_KEY1 (key_t) 0x10
 #define SHARED_KEY2 (key_t) 0x20
@@ -53,7 +58,7 @@ struct databuf1{
 	int	init;
 	int	mode;
 	int	switch_num;
-	char	d_buf[1001];
+	int	md[2];
 	unsigned char	led_data;
 	unsigned char	sw_buf[10];
 	unsigned char	fnd_buf[4];
@@ -81,13 +86,12 @@ struct sembuf v1 = {0, 1, SEM_UNDO }, v2 = {1, 1, SEM_UNDO};
 int	fd[10];
 
 // For Mode 1
-int	is_edit;
+int	sw_mode = 0;
 int	mode = 1;
-int	main_init = 1;
-struct tm	*loc_time;
-time_t	t;
+int	md[2];
+int	sw_second;
 unsigned char	sw_buf[10];
-unsigned char	time_buf[4];
+unsigned char	time_buf[4], time_buf1[4];
 unsigned char  led_data;
 unsigned char  lcd_buf[32];
 unsigned char	dot_buf[10];

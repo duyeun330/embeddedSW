@@ -23,11 +23,11 @@ void set_shared_memory() {
 		perror("error shmget\n");
 		exit(-1);
  	}
-  	if ((input_buffer = (struct databuf1 *)shmat(shm_id1, 0, 0)) == (void *)-1){
+  	if ((input_buffer = (struct databuf1 *)shmat(shm_id1, 0, 0)) == ERR){
 		perror("error shmget\n");
 		exit(-1);
 	}
-	if ((output_buffer = (struct databuf1 *)shmat(shm_id2, 0, 0)) == (void *)-1){
+	if ((output_buffer = (struct databuf1 *)shmat(shm_id2, 0, 0)) == ERR){
           perror("error shmget\n");
  		exit(-1);
 	}
@@ -65,22 +65,26 @@ void	close_device(){
 
 }
 
-void	get_current_time(){
+void	get_current_time(unsigned char *t_buf){
 	int	hr, min;
+	time_t	t;
+	struct tm	loc_tt;
 
 	t = time(NULL);
-	loc_time = localtime(&t);
-	time_buf[0] = loc_time->tm_hour / 10;
-	time_buf[1] = loc_time->tm_hour % 10;
-	time_buf[2] = loc_time->tm_min / 10;
-	time_buf[3] = loc_time->tm_min % 10;
+	localtime_r(&t, &loc_tt);
+	t_buf[0] = loc_tt.tm_hour / 10;
+	t_buf[1] = loc_tt.tm_hour % 10;
+	t_buf[2] = loc_tt.tm_min / 10;
+	t_buf[3] = loc_tt.tm_min % 10;
+	sw_second = loc_tt.tm_sec;
 }
 
-void	update_output_time(){
+
+void	update_output_time(unsigned char *t_buf){
 	int	i;
 	
 	for (i = 0; i < 4; i++)
-		output_buffer->fnd_buf[i] = time_buf[i];
+		output_buffer->fnd_buf[i] = t_buf[i];
 }
 
 void	initialize(){
@@ -90,20 +94,47 @@ void	initialize(){
 	output_buffer->init = 1;
 	output_buffer->mode = 1;
 	memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
-	get_current_time();
-	update_output_time();
+	get_current_time(time_buf);
+	update_output_time(time_buf);
 	output_buffer->led_data = 128;
 	semop(semid, &v2, 1);
 }
 
 void	input_process(){
 	int	rk_buf_size;;
+	int	get_rk;
+	int 	i, flag = 0;
+	unsigned char	tmp_sw[9];
+	struct input_event	tmp_ev[64];
+
+	rk_buf_size = sizeof(struct input_event);
 	while (1) {
 		usleep(400000);
 		semop(semid, &p1, 1);
-		rk_buf_size = sizeof(struct input_event);
-		read(fd[0], input_buffer->readkey, rk_buf_size * 64);
-		read(fd[2], &input_buffer->sw_buf, sizeof(input_buffer->sw_buf));
+		if ((get_rk = read(fd[0], tmp_ev, rk_buf_size * 64)) >= rk_buf_size) {
+			memcpy(input_buffer->readkey, tmp_ev, rk_buf_size * 64);
+			input_buffer->md[0] = 1;
+		}
+		else {
+			read(fd[2], &tmp_sw, sizeof(tmp_sw));
+			printf("hello hello %d %d\n", md[0], md[1]);
+			for (i = 0; i < 9; i++)
+				printf("[%d] ", tmp_sw[i]);
+			printf("\n");
+			for (i = 0; i < 9; i++) {
+				if (tmp_sw[i] == 1) {
+					memcpy(input_buffer->sw_buf, tmp_sw, sizeof(tmp_sw));
+					input_buffer->md[1] = 1;
+					flag = 1;
+					printf("hi hi\n");
+					break ;
+				}
+			}
+			if (flag == 0) {
+				input_buffer->md[0] = input_buffer->md[1] = 0;
+			}
+			flag = 0;
+		}
 		semop(semid, &v1, 1);
 	}
 }
@@ -111,49 +142,89 @@ void	input_process(){
 int	main_check_mode(){
 	int	is_pressed;
 	int	code_num;
+	
+	memcpy(md, input_buffer->md, sizeof(md));
+	if (md[0] == 1)
+		is_pressed = READKEY_PRESSED;
+	else if (md[1] == 1)
+		is_pressed = SWITCH_PRESSED;
+	else
+		is_pressed = NOTHING_PRESSED;
+	
+	switch(is_pressed) {
+		case READKEY_PRESSED :
+			memcpy(readkey, input_buffer->readkey, sizeof(struct input_event) * 64);
+			//exit(1);
+			break ;
 
-	is_pressed = input_buffer->readkey[0].value;
-	code_num = input_buffer->readkey[0].code;
-	if (is_pressed) {
-		switch(code_num) {
-			case KEY_BACK :
-				// 종료
-				exit(1);
-				break ;
+		case SWITCH_PRESSED :
+			//mode = (mode + 2) % 4 + 1;
+			//	main_init = 1;
+			memcpy(sw_buf, input_buffer->sw_buf, sizeof(sw_buf));
+			break ;
 
-			case KEY_VOLUME_UP :
-				mode = (mode + 2) % 4 + 1;
-				main_init = 1;
-				break ;
+		case NOTHING_PRESSED :
+			//mode = (mode + 5) % 4;
+			//main_init = 1;
+			break ;
 
-			case KEY_VOLUME_DOWN :
-				mode = (mode + 5) % 4;
-				main_init = 1;
-				break ;
-
-			default :
-				break ;
-		}
-		// readkey memset()
-		memset(input_buffer->readkey, 0, sizeof(struct input_event) * 64);
-		return (1);
+		default :
+			break ;
 	}
-	else {
-		memcpy(sw_buf, input_buffer->sw_buf, sizeof(sw_buf));
-		return (2);
-	}
-
+	memset(md, 0, sizeof(md));
+	return (is_pressed);
 }
 
-void	mode1_calculate(int	is_init){
-	if (is_init) {
-		main_init = 1;
-		memset(lcd_buf, 0, sizeof(lcd_buf));
-		memcpy(dot_buf, fpga_set_blank, sizeof(fpga_set_blank));
-		led_data = 128;
+void	modify_time(unsigned char *t_buf, int wh){
+	unsigned char tmp, tmp2, hr;
+	if (wh == 1) {
+		tmp = t_buf[0] * 10 + t_buf[1];
+		tmp = (tmp + 1) % 24;
+		t_buf[0] = tmp / 10;
+		t_buf[1] = tmp % 10;
+		update_output_time(t_buf);
 	}
 	else {
+		tmp = t_buf[2] * 10 + t_buf[3] + 1;
+		if ((hr = tmp / 60) == 1) {	
+			tmp2 = t_buf[0] * 10 + t_buf[1];
+			tmp2 = (tmp + 1) % 24;
+			t_buf[0] = tmp / 10;
+			t_buf[1] = tmp % 10;
+		}
+		tmp %= 60;
+		t_buf[2] = tmp / 10;
+		t_buf[3] = tmp % 10;
+		update_output_time(t_buf);
 	}
+}
+
+void	mode1_calculate(){
+	if (sw_mode == 0) {
+		if (sw_buf[0] == 1) {
+			printf("sw_mode0    sw_mode0\n");
+			sw_mode = 1;
+			output_buffer->led_data = 32;
+			get_current_time(time_buf1);
+		}
+	}
+	else if (sw_mode == 1) {
+		if (sw_buf[2] == 1) {
+			modify_time(time_buf, 1);		
+		}
+		else if (sw_buf[3] == 1) {
+			modify_time(time_buf, 0);
+		}
+		else if (sw_buf[0] == 1) {
+			sw_mode = 0;
+			output_buffer->led_data = 128;
+		}
+	}
+	if (sw_buf[1] == 1) {
+		get_current_time(time_buf);
+		update_output_time(time_buf);	
+	}
+
 }
 
 void	mode2_calculate(){
@@ -168,45 +239,110 @@ void	mode4_calculate(){
 
 }
 
-void	main_calculate(int mode_check){
+
+void	mode1_init(){}
+
+
+void	mode2_init(){}
+
+
+void	mode3_init(){}
+
+
+void	mode4_init(){}
+
+void	main_init(){
 	switch (mode) {
 		case CLOCK :
-			mode1_calculate(mode_check);
+			mode1_init();
 			break ;
 
 		case COUNTER :
-			mode2_calculate(mode_check);
+			mode2_init();
 			break ;
 
 		case TEXT_EDITER :
-			mode3_calculate(mode_check);
+			mode3_init();
 			break ;
 
 		case DRAW_BOARD :
-			mode4_calculate(mode_check);
+			mode4_init();
 			break ;
 		
 		default :
 			break ;
 	}
+
+}
+
+void	main_calculate(int mode_check){
+	switch (mode) {
+		case CLOCK :
+			mode1_calculate();
+			break ;
+
+		case COUNTER :
+			mode2_calculate();
+			break ;
+
+		case TEXT_EDITER :
+			mode3_calculate();
+			break ;
+
+		case DRAW_BOARD :
+			mode4_calculate();
+			break ;
+		
+		default :
+			break ;
+	}
+
 }
 
 void	main_process(){
 	int	mode_check;
+	int	sec;
+	time_t	tmp_t;
+	struct tm	tmp_loctime;
+
 	while (1) {
 		// input buffer
-		
+		usleep(400000);
 		semop(semid, &p1, 1);
 		mode_check = main_check_mode();
+		printf("main  main%d\n", mode_check);
 		semop(semid, &v1, 1);
 
 		// calculate
-		main_calculate(mode_check);
+		if (mode_check == 2) {
 
-		// output buffer
+			// output buffer
+	
+			semop(semid, &p2, 1);
+			main_calculate(mode_check);
+			semop(semid, &v2, 1);
+		}
+		else if (mode_check == 1) {
+			semop(semid, &p2, 1);
+			main_init();
+			semop(semid, &v2, 1);
+		}
+		else if (mode == 1 && sw_mode == 1) {
+			tmp_t = time(NULL);
+			localtime_r(&tmp_t, &tmp_loctime);
+			if (sw_second != tmp_loctime.tm_sec) {
+				get_current_time(time_buf1);
+				semop(semid, &p2, 1);
+				if (led_data == 32) {
+					output_buffer->led_data = led_data = 16;
+				}
+				else {
+					output_buffer->led_data = led_data = 32;
+				}
+				semop(semid, &v2, 1);
+			}
+		}
 
-		semop(semid, &p2, 1);
-		semop(semid, &v2, 1);
 	}
 }
 
@@ -269,6 +405,7 @@ void	output_handler(){
 			break ;
 	}
 }
+
 void	output_process(){
 	while (1){
 		usleep(400000);
@@ -277,11 +414,13 @@ void	output_process(){
 		semop(semid, &v2, 1);
 	}
 }
+
 int main(){
 	pid_t pid1, pid2, pid3;
 
 	semid = set_semaphore();
 	set_shared_memory();
+	initialize();
 	if ((pid1 = fork()) == -1) {
 		printf("fork failed\n");
 		exit(-1);
@@ -303,7 +442,6 @@ int main(){
 				exit(-1);
 			}
 			else if (pid3 == 0) {
-				initialize();
 				main_process();
 			}
 		}
