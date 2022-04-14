@@ -451,7 +451,7 @@ void	mode1_init(){
 
 
 void	mode2_init(){	
-	count = ed_hr = ed_min = 0;
+	count = n_decimal = ed_hr = ed_min = 0;
 	sw_mode2 = 1;
      initialize_device(COUNTER);
 	output_buffer->led_data = 64;
