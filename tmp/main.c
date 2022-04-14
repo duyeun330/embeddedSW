@@ -66,7 +66,9 @@ void open_device(){
 void	close_device(){
 	int	i;
 
-	//for (
+	for (i = 0; i < 6; i++)
+		if (fd[i] > 0) 
+			close(fd[i]);
 }
 
 void	get_current_time(unsigned char *t_buf){
@@ -94,6 +96,7 @@ void	update_output_time(unsigned char *t_buf){
 void	initialize(){
 
 	open_device();
+	input_buffer->end_flag = output_buffer->end_flag = 0;
 	output_buffer->init = 1;
 	output_buffer->mode = 1;
 	memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
@@ -110,13 +113,12 @@ void	input_process(){
 	struct input_event	tmp_ev[64];
 
 	rk_buf_size = sizeof(struct input_event);
-	while (1) {
+	while (!end_flag) {
 		usleep(350000);
 		semop(semid, &p1, 1);
 		if ((get_rk = read(fd[0], tmp_ev, rk_buf_size * 64)) >= rk_buf_size) {
 			memcpy(input_buffer->readkey, tmp_ev, rk_buf_size * 64);
 			input_buffer->md[0] = 1;
-			printf("hello hello %d %d\n", md[0], md[1]);
 		}
 		else {
 			read(fd[2], &tmp_sw, sizeof(tmp_sw));
@@ -125,7 +127,6 @@ void	input_process(){
 					memcpy(input_buffer->sw_buf, tmp_sw, sizeof(tmp_sw));
 					input_buffer->md[1] = 1;
 					flag = 1;
-					printf("hi hi\n");
 					break ;
 				}
 			}
@@ -134,6 +135,7 @@ void	input_process(){
 			}
 			flag = 0;
 		}
+		end_flag = input_buffer->end_flag;
 		semop(semid, &v1, 1);
 	}
 }
@@ -171,34 +173,29 @@ int	main_check_mode(){
 	return (is_pressed);
 }
 
-void	modify_time(unsigned char *t_buf, int wh){
-	unsigned char tmp, tmp2, hr;
-	if (wh == 1) {
-		tmp = t_buf[0] * 10 + t_buf[1];
-		tmp = (tmp + 1) % 24;
-		t_buf[0] = tmp / 10;
-		t_buf[1] = tmp % 10;
-		update_output_time(t_buf);
-	}
-	else {
-		tmp = t_buf[2] * 10 + t_buf[3] + 1;
-		if ((hr = tmp / 60) == 1) {	
-			tmp2 = t_buf[0] * 10 + t_buf[1];
-			tmp2 = (tmp + 1) % 24;
-			t_buf[0] = tmp / 10;
-			t_buf[1] = tmp % 10;
-		}
-		tmp %= 60;
-		t_buf[2] = tmp / 10;
-		t_buf[3] = tmp % 10;
-		update_output_time(t_buf);
-	}
+void	modify_time(unsigned char *t_buf){
+	int	sum = 0;
+
+	sum += (int)t_buf[0] * 600;
+	sum += (int)t_buf[1] * 60;
+	sum += (int)t_buf[2] * 10;
+	sum += (int)t_buf[3];
+	
+	sum += ed_hr * 60 + ed_min;
+	sum %= 1440;
+	ed_hr = sum / 60;
+	ed_min = sum % 60;
+	t_buf[3] = (unsigned char)(ed_min % 10);
+	t_buf[2] = (unsigned char)(ed_min / 10);
+	t_buf[1] = (unsigned char)(ed_hr % 10);
+	t_buf[0] = (unsigned char)(ed_hr / 10);
+	ed_min = ed_hr = 0;
+	update_output_time(t_buf);
 }
 
 void	mode1_calculate(){
 	if (sw_mode == 0) {
 		if (sw_buf[0] == 1) {
-			printf("sw_mode0    sw_mode0\n");
 			sw_mode = 1;
 			output_buffer->led_data = 32;
 			get_current_time(time_buf1);
@@ -206,19 +203,21 @@ void	mode1_calculate(){
 	}
 	else if (sw_mode == 1) {
 		if (sw_buf[2] == 1) {
-			modify_time(time_buf, 1);		
+			ed_hr += 1;
 		}
 		else if (sw_buf[3] == 1) {
-			modify_time(time_buf, 0);
+			ed_min += 1;
 		}
 		else if (sw_buf[0] == 1) {
 			sw_mode = 0;
+			modify_time(time_buf);
 			output_buffer->led_data = 128;
 		}
 	}
 	if (sw_buf[1] == 1) {
+		ed_hr = ed_min = 0;
 		get_current_time(time_buf);
-		update_output_time(time_buf);	
+		update_output_time(time_buf);
 	}
 
 }
@@ -273,7 +272,6 @@ void	mode2_calculate(){
 			output_buffer->led_data = 16;
 		else
 			output_buffer->led_data = 128;
-		printf("decimal decimal   %d\n", sw_mode2);
 	}
 	dec = ret_dec(sw_mode2);
 	tmp = n_decimal;
@@ -286,7 +284,8 @@ void	mode2_calculate(){
 int	get_corret_alpha(int num) {
 	if (num == 1 && sw_buf[2] == 1) {
 		memset(lcd_buf, 0, sizeof(lcd_buf));
-		dup_num = dup_char = idx = 0;
+		dup_num = idx = 0;
+		dup_char = -1;
 		is_first = 1;
 		count += 2;
 		return (1);
@@ -300,7 +299,8 @@ int	get_corret_alpha(int num) {
 			is_number = 1;
 			memcpy(dot_buf, fpga_number[1], sizeof(dot_buf));
 		}
-		dup_num = dup_char = 0;
+		dup_num = 0;
+		dup_char = -1;
 		count += 2;
 		return (1);
 	}
@@ -321,14 +321,24 @@ int	get_corret_alpha(int num) {
 				dup_char = num;
 				if (!is_first){
 					idx++;
-					idx %= 32;
 				}
 				is_first = 0;
+			}
+			if (idx >= 32) {
+				idx = 31;
+				memmove(lcd_buf, lcd_buf + 1, sizeof(lcd_buf) - 1);
 			}
 			lcd_buf[idx] = alphabet[dup_num][num];
 		}
 		else {
-			idx = (idx + 1) % 32;
+			if (++idx >= 32) {
+				idx = 31;
+				memmove(lcd_buf, lcd_buf + 1, sizeof(lcd_buf) - 1);
+			}
+			if (is_first) {
+				idx--;
+				is_first = 0;
+			}
 			lcd_buf[idx] = '0' + num + 1;
 		}
 		count++;
@@ -414,63 +424,55 @@ void	mode4_calculate(){
 	memcpy(output_buffer->dot_buf, dot_buf, sizeof(output_buffer->dot_buf));
 }
 
+void	initialize_device(int wh_mode){
+	output_buffer->init = 1;
+	output_buffer->mode = wh_mode;
+	led_data = output_buffer->led_data = 0;
+	memset(lcd_buf, 0, sizeof(lcd_buf));
+	memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
+	memset(dot_buf, 0, sizeof(dot_buf));
+	memset(output_buffer->dot_buf, 0, sizeof(output_buffer->dot_buf));
+	memset(output_buffer->fnd_buf, 0, sizeof(output_buffer->fnd_buf));
+}
 
 void	mode1_init(){
-	output_buffer->init = 1;
-	output_buffer->mode = 1;
-	memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
+	sw_mode = ed_hr = ed_min = 0;
+	initialize_device(CLOCK);	
 	update_output_time(time_buf);
 	output_buffer->led_data = 128;
 }
 
 
 void	mode2_init(){	
-	int	i;
-
+	count = ed_hr = ed_min = 0;
 	sw_mode2 = 1;
-	output_buffer->init = 1;
-     output_buffer->mode = 2;
-     memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
-	for (i = 0; i < 4; i++)
-		output_buffer->fnd_buf[i] = 0;
+     initialize_device(COUNTER);
 	output_buffer->led_data = 64;
 }
 
 
 void	mode3_init(){	
-	int	i;
-
-	dup_num = dup_char = idx = is_number = 0;
+	dup_num = idx = is_number = 0;
+	dup_char = -1;
 	is_first = 1;
-	output_buffer->init = 1;
-     output_buffer->mode = 3;
-     memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
-	for (i = 0; i < 4; i++)
-		output_buffer->fnd_buf[i] = 0;
+	count = 0;
+	initialize_device(TEXT_EDITER);
 	memcpy(dot_buf, fpga_set_A, sizeof(output_buffer->dot_buf));
 	memcpy(output_buffer->dot_buf, dot_buf, sizeof(output_buffer->dot_buf));
-	output_buffer->led_data = 0;
 }
 
-
 void	mode4_init(){
-	int	i;
-
 	get_current_time(time_buf1);
 	dx = dy = 0;
-	output_buffer->init = 1;
-     output_buffer->mode = 4;
-     memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
-	for (i = 0; i < 4; i++)
-		output_buffer->fnd_buf[i] = 0;
-	memcpy(dot_buf, fpga_set_blank, sizeof(output_buffer->dot_buf));
-	memcpy(output_buffer->dot_buf, dot_buf, sizeof(output_buffer->dot_buf));
-	output_buffer->led_data = 0;
+     sw_mode4 = 1;
+	count4 = 0;
+	initialize_device(DRAW_BOARD);
 }
 
 void	main_init(){
-	if (readkey[0].value == KEY_RELEASE)
+	if (readkey[0].value == KEY_RELEASE) {
 		return ;
+	}
 	if (readkey[0].code == KEY_VOLUME_UP) 
 	{
 		mode = mode + 1;
@@ -483,7 +485,9 @@ void	main_init(){
 			mode = 4;
 	}
 	else if (readkey[0].code == KEY_BACK) {
-	
+		end_flag = 1;
+		mode = output_buffer->mode = -1;
+		output_buffer->end_flag = 1;
 	}
 	switch (mode) {
 		case CLOCK :
@@ -537,12 +541,11 @@ void	main_process(){
 	time_t	tmp_t;
 	struct tm	tmp_loctime;
 
-	while (1) {
+	while (!end_flag) {
 		// input buffer
 		usleep(350000);
 		semop(semid, &p1, 1);
 		mode_check = main_check_mode();
-		printf("main  main%d\n", mode_check);
 		semop(semid, &v1, 1);
 
 		// calculate
@@ -572,11 +575,15 @@ void	main_process(){
 			if (sw_second != tmp_loctime.tm_sec){
 				get_current_time(time_buf1);
 				output_buffer->dot_buf[dy] ^= (1 << (6 - dx));
-				printf("mode4  mode4  %x\n", output_buffer->dot_buf[dy]);
 			}
 		}
 		semop(semid, &v2, 1);
 	}
+	semop(semid, &p1, 1);
+	input_buffer->end_flag = 1;
+	semop(semid, &v1, 1);
+	semop(semid, &p2, 1);
+	semop(semid, &v2, 1);
 }
 
 void	output_mode1(int is_init){
@@ -668,6 +675,7 @@ void	output_mode3(int is_init){
 		exit(-1);
 	}
 }
+
 void	output_mode4(int is_init){
 	int checkerr;
 	unsigned long	*fpga_addr;
@@ -688,11 +696,40 @@ void	output_mode4(int is_init){
 		printf("%s output write error.\n", FND_ADDRESS);
 		exit(-1);
 	}
-	printf("output  output   \n");
 	if ((checkerr = write(fd[3], &output_buffer->dot_buf, sizeof(output_buffer->dot_buf))) < 0) {
 		printf("%s output write error.\n", DOT_ADDRESS);
 		exit(-1);
 	}
+	if ((checkerr = write(fd[4], &output_buffer->lcd_buf, 32)) < 0) {
+		printf("%s output write error.\n", LCD_ADDRESS);
+		exit(-1);
+	}
+}
+
+void	clean_device(){
+	int checkerr;
+	unsigned long	*fpga_addr;
+	unsigned char	*led_addr;
+
+	fpga_addr = (unsigned long *)mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd[5], FPGA_BASE_ADDRESS);
+	if (fpga_addr == MAP_FAILED) {
+		printf("%s mmap error\n", LED_ADDRESS);
+		exit(-1);
+	}
+	led_addr = (unsigned char*)((void *)fpga_addr+LED_ADDR);
+	*led_addr = 0;
+	munmap(led_addr, 4096);
+	memset(output_buffer->fnd_buf, 0, sizeof(output_buffer->fnd_buf));
+	if ((checkerr = write(fd[1], &output_buffer->fnd_buf, 4)) < 0) {
+		printf("%s output write error.\n", FND_ADDRESS);
+		exit(-1);
+	}
+	
+	if ((checkerr = write(fd[3], &fpga_set_blank, sizeof(output_buffer->dot_buf))) < 0) {
+		printf("%s output write error.\n", DOT_ADDRESS);
+		exit(-1);
+	}
+	memset(output_buffer->lcd_buf, 0, sizeof(output_buffer->lcd_buf));
 	if ((checkerr = write(fd[4], &output_buffer->lcd_buf, 32)) < 0) {
 		printf("%s output write error.\n", LCD_ADDRESS);
 		exit(-1);
@@ -720,22 +757,23 @@ void	output_handler(){
 			break;
 
 		default :
-			close_device();
+			end_flag = output_buffer->end_flag;
 			break ;
 	}
 }
 
 void	output_process(){
-	while (1){
+	while (!end_flag){
 		usleep(350000);
 		semop(semid, &p2, 1);
-		output_handler(output_buffer->init);
+		output_handler();
 		semop(semid, &v2, 1);
 	}
 }
 
 int main(){
-	pid_t pid1, pid2, pid3;
+	pid_t pid1, pid2, pid3, wpid;
+	int	status = 0;
 
 	semid = set_semaphore();
 	set_shared_memory();
@@ -762,6 +800,11 @@ int main(){
 			}
 			else if (pid3 == 0) {
 				main_process();
+			}
+			else {
+				while((wpid = wait(&status)) > 0);
+				clean_device();
+				close_device();
 			}
 		}
 	}

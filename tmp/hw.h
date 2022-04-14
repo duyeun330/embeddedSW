@@ -22,6 +22,7 @@
 #include <termios.h>
 #include <signal.h>
 #include <string.h>
+
 // DEVICE ADDRESS
 #define READKEY_ADDRESS "/dev/input/event0"
 #define FND_ADDRESS "/dev/fpga_fnd"
@@ -60,6 +61,7 @@ struct databuf1{
 	int	mode;
 	int	switch_num;
 	int	md[2];
+	int	end_flag;
 	unsigned char	led_data;
 	unsigned char	sw_buf[9];
 	unsigned char	fnd_buf[4];
@@ -88,15 +90,16 @@ int	fd[10];
 
 // For Mode 1
 int	sw_mode = 0;
+int	ed_hr, ed_min;
 
 // FOR MODE 2
 int	n_decimal = 0;
 int	sw_mode2 = 1;
+int	count = 0;
 
 // FOR MODE 3
-int	count = 0;
 int	dup_num = 0;
-int	dup_char = 0;
+int	dup_char = -1;
 int	idx = 0;
 int	is_number = 0;
 int	is_first = 1;
@@ -115,6 +118,7 @@ int	dx, dy;
 int	mode = 1;
 int	md[2];
 int	sw_second;
+int	end_flag = 0;
 unsigned char	sw_buf[9];
 unsigned char	time_buf[4], time_buf1[4];
 unsigned char  led_data;
