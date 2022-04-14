@@ -1,17 +1,15 @@
 #include "hw.h"
-#include "fpga_dot_font.h"
+
 int set_semaphore() {
 	semun	x;
 	int		id = -1;
 	
 	x.val = 1;
-	if ((id = semget(SEM_KEY, 3, 0600|IPC_CREAT)) == -1)
+	if ((id = semget(SEM_KEY, 2, 0600|IPC_CREAT)) == -1)
 		exit(-1);
 	if (semctl(id, 0, SETVAL, x) == -1)
 		exit(-1);
 	if (semctl(id, 1, SETVAL, x) == -1)
-		exit(-1);
-	if (semctl(id, 2, SETVAL, x) == -1)
 		exit(-1);
 	return (id);
 }
@@ -33,6 +31,15 @@ void set_shared_memory() {
           perror("error shmget\n");
  		exit(-1);
 	}
+}
+
+void	remove_ipcs() {
+	if (shmctl(shm_id1, IPC_RMID, 0) == -1)
+		exit(-1);
+	if (shmctl(shm_id2, IPC_RMID, 0) == -1)
+		exit(-1);
+	if (shmctl(semid, IPC_RMID, 0) == -1)
+		exit(-1);
 }
 
 void open_device(){
@@ -735,6 +742,7 @@ void	clean_device(){
 		exit(-1);
 	}
 }
+
 void	output_handler(){
 	int	is_init;
 
@@ -805,6 +813,7 @@ int main(){
 				while((wpid = wait(&status)) > 0);
 				clean_device();
 				close_device();
+				remove_ipcs();
 			}
 		}
 	}

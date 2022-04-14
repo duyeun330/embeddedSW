@@ -8,5 +8,8 @@ all: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
 
-main.o:  hw.h fpga_dot_font.h main.c
+main.o:  hw.h main.c
 	$(CC) $(CFLAGS) -c main.c
+
+clean :
+	rm -rf *.o $(TARGET)
