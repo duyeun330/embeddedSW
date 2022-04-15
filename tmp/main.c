@@ -332,6 +332,10 @@ int	get_corret_alpha(int num) {
 			idx = 31;
 			memmove(lcd_buf, lcd_buf + 1, sizeof(lcd_buf) - 1);
 		}
+		if (is_first) {
+			idx--;
+			is_first = 0;
+		}
 		lcd_buf[idx] = ' ';
 		dup_num = 1;
 		dup_char = -1;
@@ -398,6 +402,8 @@ void	mode3_calculate(){
 }
 
 void	get_dot_matrix(int num){
+	unsigned char	tmp;
+	int			i;
 	// 각각의 sw(?)에 따라 값을 바꿔준다.
 	if (num == 0) { // sw(1) 값을 초기화
 		memcpy(dot_buf, fpga_set_blank, sizeof(dot_buf));
