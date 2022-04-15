@@ -4,6 +4,7 @@ int set_semaphore() {
 	semun	x;
 	int		id = -1;
 	
+	// 세마포어를 총 2개 생성한다.
 	x.val = 1;
 	if ((id = semget(SEM_KEY, 2, 0600|IPC_CREAT)) == -1)
 		exit(-1);
@@ -15,6 +16,7 @@ int set_semaphore() {
 }
 
 void set_shared_memory() {
+	// shared memory의 공간을 총 2개, input과 output 버퍼를 만들어 받을 수 있도록 한다.
 	if ((shm_id1 = shmget (SHARED_KEY1, sizeof(struct databuf1), 0600 | IPC_CREAT)) == -1){
 		perror("error shmget\n");
 		exit(-1);
@@ -34,6 +36,7 @@ void set_shared_memory() {
 }
 
 void	remove_ipcs() {
+	// ipc를 제거해준다.
 	if (shmctl(shm_id1, IPC_RMID, 0) == -1)
 		exit(-1);
 	if (shmctl(shm_id2, IPC_RMID, 0) == -1)
@@ -43,7 +46,7 @@ void	remove_ipcs() {
 }
 
 void open_device(){
-	// open readkey
+	// device 총 6개를 모두 열어준다.
 	if ((fd[0] = open(READKEY_ADDRESS, O_RDONLY | O_NONBLOCK)) == -1) {
 		printf("%s open error\n", READKEY_ADDRESS);
 		exit(-1);
@@ -72,7 +75,7 @@ void open_device(){
 
 void	close_device(){
 	int	i;
-
+	// 열려있는 디바이스들을 모두 닫아준다.
 	for (i = 0; i < 6; i++)
 		if (fd[i] > 0) 
 			close(fd[i]);
@@ -82,7 +85,7 @@ void	get_current_time(unsigned char *t_buf){
 	int	hr, min;
 	time_t	t;
 	struct tm	loc_tt;
-
+	// 현재 시간을 t_buf에 저장해주는 함수, 초는 전역변수 sw_second에 저장
 	t = time(NULL);
 	localtime_r(&t, &loc_tt);
 	t_buf[0] = loc_tt.tm_hour / 10;
@@ -95,13 +98,14 @@ void	get_current_time(unsigned char *t_buf){
 
 void	update_output_time(unsigned char *t_buf){
 	int	i;
-	
+	// output 버퍼에 값을 저장해줄 수 있는 함수
 	for (i = 0; i < 4; i++)
 		output_buffer->fnd_buf[i] = t_buf[i];
 }
 
 void	initialize(){
-
+	// 가장 처음 초기화 해주는 함수
+	// 디바이스들을 오픈하고, input, output버퍼에 초기값들을 setting해준다.
 	open_device();
 	input_buffer->end_flag = output_buffer->end_flag = 0;
 	output_buffer->init = 1;
@@ -123,11 +127,13 @@ void	input_process(){
 	while (!end_flag) {
 		usleep(350000);
 		semop(semid, &p1, 1);
+		// readkey에서 받은 값이 유효한지 확인하고 유효하다면 md[0]값을 바꿔준다.
 		if ((get_rk = read(fd[0], tmp_ev, rk_buf_size * 64)) >= rk_buf_size) {
 			memcpy(input_buffer->readkey, tmp_ev, rk_buf_size * 64);
 			input_buffer->md[0] = 1;
 		}
 		else {
+			// switch에서 받은 값이 유효한지 확인하고 유효하다면 md[1]값을 바꿔준다.
 			read(fd[2], &tmp_sw, sizeof(tmp_sw));
 			for (i = 0; i < 9; i++) {
 				if (tmp_sw[i] == 1) {
@@ -150,7 +156,7 @@ void	input_process(){
 int	main_check_mode(){
 	int	is_pressed;
 	int	code_num;
-	
+	// input 버퍼 내의 md 값을 확인하여 어떤 버튼이 눌렸는지 확인 후 return 해준다.
 	memcpy(md, input_buffer->md, sizeof(md));
 	if (md[0] == 1)
 		is_pressed = READKEY_PRESSED;
@@ -182,7 +188,7 @@ int	main_check_mode(){
 
 void	modify_time(unsigned char *t_buf){
 	int	sum = 0;
-
+	// 저장되어있는 시간과 ed_hr, ed_min값을 모두 더해서 계산해준다.
 	sum += (int)t_buf[0] * 600;
 	sum += (int)t_buf[1] * 60;
 	sum += (int)t_buf[2] * 10;
@@ -201,6 +207,8 @@ void	modify_time(unsigned char *t_buf){
 }
 
 void	mode1_calculate(){
+	// sw_mode = 0 -> 수정 가능하지 않은 모드
+	// sw_mode = 1 -> 수정 가능한 모드
 	if (sw_mode == 0) {
 		if (sw_buf[0] == 1) {
 			sw_mode = 1;
@@ -209,18 +217,19 @@ void	mode1_calculate(){
 		}
 	}
 	else if (sw_mode == 1) {
-		if (sw_buf[2] == 1) {
+		if (sw_buf[2] == 1) { // sw(3)번이 눌렸을 떄
 			ed_hr += 1;
 		}
-		else if (sw_buf[3] == 1) {
+		else if (sw_buf[3] == 1) { // sw(4)번이 눌렸을 때
 			ed_min += 1;
 		}
-		else if (sw_buf[0] == 1) {
+		else if (sw_buf[0] == 1) { // sw(1)번이 눌렸을 때
 			sw_mode = 0;
 			modify_time(time_buf);
 			output_buffer->led_data = 128;
 		}
 	}
+	// reset 버튼을 눌렀을 때, 저장되어있던 ed_hr와 ed_min도 reset해주었다.
 	if (sw_buf[1] == 1) {
 		ed_hr = ed_min = 0;
 		get_current_time(time_buf);
@@ -230,6 +239,7 @@ void	mode1_calculate(){
 }
 
 int	ret_dec(int wh) {
+	// 알맞은 진수를 리턴해준다.
 	if (wh == 1)
 		return (10);
 	else if (wh == 2)
@@ -242,7 +252,8 @@ int	ret_dec(int wh) {
 
 void	add_to_decimal(int m, int wh) {
 	int	num = ret_dec(wh);
-	switch (m) {
+	// ret_dec()를 통해 몇진수인지 확인한다.
+	switch (m) { //자리수에 따른 값을 더해준다.
 		case 1 :
 			n_decimal += num * num;
 			break ;
@@ -261,12 +272,15 @@ void	mode2_calculate(){
 	int	i;
 	int	tmp;
 	int	dec;
+	// sw(2), sw(3), sw(4)번이 눌렸을 때 알맞은 값을 더해줄 수 있도록 계산
 	for (i = 1; i <= 3; i++){
 		if (sw_buf[i] == 1){
 			add_to_decimal(i, sw_mode2);
 			break ;
 		}
 	}
+	// sw(1)번이 눌렸을 때 진수를 바꿔줄 수 있도록 한다.
+	// sw_mode2 = 1 -> 10진수 2-> 8진수 3 -> 4진수 4 -> 2진수
 	if (sw_buf[0] == 1) {
 		sw_mode2 += 1;
 		if (sw_mode2 == 5)
@@ -280,6 +294,7 @@ void	mode2_calculate(){
 		else
 			output_buffer->led_data = 128;
 	}
+	// 마지막에 모드에 따른 알맞은 값을 output_buffer에 저장
 	dec = ret_dec(sw_mode2);
 	tmp = n_decimal;
 	for (i = 3; i >= 1; i--) {
@@ -289,7 +304,8 @@ void	mode2_calculate(){
 }
 
 int	get_corret_alpha(int num) {
-	if (num == 1 && sw_buf[2] == 1) {
+	if (num == 1 && sw_buf[2] == 1) { // sw(2), sw(3)이 동시에 눌렸을 떄
+		// 값을 init할 때와 같이 모두 초기화시켜준다.
 		memset(lcd_buf, 0, sizeof(lcd_buf));
 		dup_num = idx = 0;
 		dup_char = -1;
@@ -297,10 +313,10 @@ int	get_corret_alpha(int num) {
 		count += 2;
 		return (1);
 	}
-	else if (num == 4 && sw_buf[5] == 1) {
-		if (is_number) {
+	else if (num == 4 && sw_buf[5] == 1) { // sw(5), sw(6)가 동시에 눌렸을 때
+		if (is_number) { // is_number는 입력모드를 나타내는 것으로 입력모드를 바꾼다.
 			is_number = 0;
-			memcpy(dot_buf, fpga_set_A, sizeof(dot_buf));
+			memcpy(dot_buf, fpga_set_A, sizeof(dot_buf)); // dot buffer 모양도 바꾼다.
 		}
 		else {
 			is_number = 1;
@@ -311,12 +327,18 @@ int	get_corret_alpha(int num) {
 		count += 2;
 		return (1);
 	}
-	else if (num == 7 && sw_buf[8] == 1) {
-		idx++;
+	else if (num == 7 && sw_buf[8] == 1) { // sw(8), sw(9)가 동시에 눌렸을 때 띄어쓰기
+		if (++idx >= 32) {
+			idx = 31;
+			memmove(lcd_buf, lcd_buf + 1, sizeof(lcd_buf) - 1);
+		}
+		lcd_buf[idx] = ' ';
+		dup_num = 1;
+		dup_char = -1;
 		count += 2;
 		return (1);
 	}
-	else {
+	else { // 모드에 따른 값 저장
 		if (is_number == 0){
 			if (num == dup_char) {
 				dup_num += 1;
@@ -331,7 +353,7 @@ int	get_corret_alpha(int num) {
 				}
 				is_first = 0;
 			}
-			if (idx >= 32) {
+			if (idx >= 32) { // 최대 출력 버퍼가 넘어갔을 때
 				idx = 31;
 				memmove(lcd_buf, lcd_buf + 1, sizeof(lcd_buf) - 1);
 			}
@@ -357,7 +379,7 @@ void	mode3_calculate(){
 	int	i;
 	int	flag = 0;
 	int	tmp;
-
+	// sw(?)에 따른 값을 계산
 	for (i = 0; i < 9; i++) {
 		if (sw_buf[i] == 1) {
 			flag = get_corret_alpha(i);
@@ -367,6 +389,7 @@ void	mode3_calculate(){
 	}
 	memcpy(output_buffer->lcd_buf, lcd_buf, sizeof(output_buffer->lcd_buf));
 	tmp = count;
+	// count를 계산 후 fnd에 입력
 	for (i = 3; i >= 0; i--) {
 		output_buffer->fnd_buf[i] = tmp % 10;
 		tmp /= 10;
@@ -375,32 +398,30 @@ void	mode3_calculate(){
 }
 
 void	get_dot_matrix(int num){
-	unsigned char	tmp = 0;
-	int	i;
-
-	if (num == 0) {
+	// 각각의 sw(?)에 따라 값을 바꿔준다.
+	if (num == 0) { // sw(1) 값을 초기화
 		memcpy(dot_buf, fpga_set_blank, sizeof(dot_buf));
 		sw_mode4 = 1;
 		dx = dy = 0;
 	}
-	else if (num == 2) {
+	else if (num == 2) { // sw(3) 커서를 표시할 것인지에 대한 버튼
 		if (sw_mode4)
 			sw_mode4 = 0;
 		else
 			sw_mode4 = 1;
 	}
-	else if (num == 4) {
+	else if (num == 4) { // sw(5) 해당 커서 위치의 값을 입력하거나 없애준다.
 		dot_buf[dy] ^= (1 << (6 - dx));
 	}
-	else if (num == 6) {
+	else if (num == 6) { // sw(7) 커서 위치와 커서 표시를 제외한 초기화
 		memcpy(dot_buf, fpga_set_blank, sizeof(dot_buf));
 	}
-	else if (num == 8) {
+	else if (num == 8) { // sw(9) 값들을 반전시킨다.
 		tmp = (1 << 7) - 1;
 		for (i = 0; i < 10; i++)
 			dot_buf[i] ^= tmp;
 	}
-	else {
+	else { // 커서 이동sw(2), sw(4), sw(6), sw(8)
 		if (num == 1)
 			dy = (dy + 9) % 10;
 		else if (num == 3)
@@ -415,7 +436,7 @@ void	get_dot_matrix(int num){
 void	mode4_calculate(){
 	int	i;
 	int	tmp;
-
+	// sw(?)에 따른 값을 계산
 	for (i = 0 ; i < 9; i++) {
 		if (sw_buf[i] == 1) {
 			get_dot_matrix(i);
@@ -424,6 +445,7 @@ void	mode4_calculate(){
 	}
 	count4++;
 	tmp = count4;
+	// count 값 계산 후 fnd 출력
 	for (i = 3; i >= 0; i--) {
 		output_buffer->fnd_buf[i] = tmp % 10;
 		tmp /= 10;
@@ -431,7 +453,8 @@ void	mode4_calculate(){
 	memcpy(output_buffer->dot_buf, dot_buf, sizeof(output_buffer->dot_buf));
 }
 
-void	initialize_device(int wh_mode){
+void	initialize_device(int wh_mode){ 
+	// output buffer를 초기화
 	output_buffer->init = 1;
 	output_buffer->mode = wh_mode;
 	led_data = output_buffer->led_data = 0;
@@ -477,9 +500,11 @@ void	mode4_init(){
 }
 
 void	main_init(){
+	// readkey의 입력은 key pressed를 기준으로 하였다.
 	if (readkey[0].value == KEY_RELEASE) {
 		return ;
 	}
+	// mode 변경
 	if (readkey[0].code == KEY_VOLUME_UP) 
 	{
 		mode = mode + 1;
@@ -496,6 +521,7 @@ void	main_init(){
 		mode = output_buffer->mode = -1;
 		output_buffer->end_flag = 1;
 	}
+	// 알맞은 init함수 호출
 	switch (mode) {
 		case CLOCK :
 			mode1_init();
@@ -519,7 +545,7 @@ void	main_init(){
 
 }
 
-void	main_calculate(int mode_check){
+void	main_calculate(){
 	switch (mode) {
 		case CLOCK :
 			mode1_calculate();
@@ -557,13 +583,13 @@ void	main_process(){
 
 		// calculate
 		semop(semid, &p2, 1);
-		if (mode_check == 2) {
+		if (mode_check == 2) { // switch 입력 받았을 떄
 			main_calculate(mode_check);
 		}
-		else if (mode_check == 1) {
+		else if (mode_check == 1) {  // readkey 입력 받았을 때
 			main_init();
 		}
-		else if (mode == 1 && sw_mode == 1) {
+		else if (mode == 1 && sw_mode == 1) { // mode1 깜빡임 구현
 			tmp_t = time(NULL);
 			localtime_r(&tmp_t, &tmp_loctime);
 			if (sw_second != tmp_loctime.tm_sec) {
@@ -576,7 +602,7 @@ void	main_process(){
 				}
 			}
 		}
-		else if (mode == 4 && sw_mode4 == 1) {
+		else if (mode == 4 && sw_mode4 == 1) { // mode4 깜빡임 구현
 			tmp_t = time(NULL);
 			localtime_r(&tmp_t, &tmp_loctime);
 			if (sw_second != tmp_loctime.tm_sec){
@@ -589,11 +615,9 @@ void	main_process(){
 	semop(semid, &p1, 1);
 	input_buffer->end_flag = 1;
 	semop(semid, &v1, 1);
-	semop(semid, &p2, 1);
-	semop(semid, &v2, 1);
 }
 
-void	output_mode1(int is_init){
+void	output_mode1(int is_init){ // mode1 출력
 	int checkerr;
 	unsigned long	*fpga_addr;
 	unsigned char	*led_addr;
@@ -623,7 +647,7 @@ void	output_mode1(int is_init){
 	munmap(led_addr, 4096);
 }
 
-void	output_mode2(int is_init){
+void	output_mode2(int is_init){ // mode2 출력
 	int checkerr;
 	unsigned long	*fpga_addr;
 	unsigned char	*led_addr;
@@ -653,7 +677,7 @@ void	output_mode2(int is_init){
 	munmap(led_addr, 4096);
 }
 
-void	output_mode3(int is_init){
+void	output_mode3(int is_init){ // mode3 출력
 	int checkerr;
 	unsigned long	*fpga_addr;
 	unsigned char	*led_addr;
@@ -683,7 +707,7 @@ void	output_mode3(int is_init){
 	}
 }
 
-void	output_mode4(int is_init){
+void	output_mode4(int is_init){ // mode4 출력
 	int checkerr;
 	unsigned long	*fpga_addr;
 	unsigned char	*led_addr;
@@ -713,7 +737,7 @@ void	output_mode4(int is_init){
 	}
 }
 
-void	clean_device(){
+void	clean_device(){ // 종료되기 전 device들을 초기상태로 바꿔준다.
 	int checkerr;
 	unsigned long	*fpga_addr;
 	unsigned char	*led_addr;
@@ -743,7 +767,7 @@ void	clean_device(){
 	}
 }
 
-void	output_handler(){
+void	output_handler(){ // 모드에 따른 함수를 맵핑해준다.
 	int	is_init;
 
 	is_init = output_buffer->init;

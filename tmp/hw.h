@@ -158,7 +158,7 @@ void mode2_init();
 void mode3_init();
 void mode4_init();
 void main_init();
-void main_calcutate(int);
+void main_calcutate();
 void main_process();
 
 void output_mode1(int);
